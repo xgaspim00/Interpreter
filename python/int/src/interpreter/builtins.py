@@ -2,6 +2,8 @@
 This module contains the built-in classes and functions for the SOL language.
 """
 
+import sys
+
 from interpreter.error_codes import ErrorCode
 from interpreter.exceptions import InterpreterError
 from interpreter.runtime import SolClass, SolObject
@@ -202,9 +204,9 @@ def print_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
         raise InterpreterError(
             error_code=ErrorCode.INT_OTHER, message="String.print expects no arguments"
         )
-    # Print the receiver's value to the console
-    print(receiver.value)
-    return NIL
+    # Print the receiver's value to the console without a newline
+    sys.stdout.write(str(receiver.value))
+    return receiver
 
 
 def equal_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
@@ -241,7 +243,7 @@ def convert_to_integer(receiver: SolObject, args: list[SolObject]) -> SolObject:
         ) from e
 
 
-def read(args: list[SolObject]) -> SolObject:
+def read(receiver: SolObject, args: list[SolObject]) -> SolObject:
     """Implements the Object.read method."""
     if len(args) != 0:
         raise InterpreterError(
