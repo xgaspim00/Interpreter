@@ -17,9 +17,11 @@ class SolObject:
 
     sol_class: SolClass
     attributes: dict[str, SolObject]
-    value: int | str | None  # For int and str objects, None for class instances
+    value: int | str | SolClass | tuple[object, ...] | None
 
-    def __init__(self, sol_class: SolClass, value: int | str | None = None) -> None:
+    def __init__(
+        self, sol_class: SolClass, value: int | str | SolClass | tuple[object, ...] | None = None
+    ) -> None:
         self.sol_class = sol_class
         self.attributes = {}
         self.value = value
