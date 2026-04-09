@@ -1,419 +1,390 @@
 """
-This module contains the built-in classes and functions for the SOL language.
+This module contains the built-in classes and static functions for the SOL language.
+
+Author: Marek Gašpierik (xgaspim00)
+
+ARCHITECTURAL NOTE:
+This file implements only static methods that are independent of the program's
+runtime state (e.g., arithmetic, string manipulation, identity checks).
+Dynamic methods that control the program flow, evaluate AST nodes, or manage
+environments (such as `whileTrue:`, `ifTrue:`, `timesRepeat:`, `new`, and `from:`)
+are implemented and injected dynamically by the Interpreter class in `interpreter.py`.
+This design prevents circular imports and grants these methods access to the execution context.
 """
 
-import sys
+import math
+from collections.abc import Callable
 
 from interpreter.error_codes import ErrorCode
 from interpreter.exceptions import InterpreterError
 from interpreter.runtime import SolClass, SolObject
 
+# Define the core classes and singleton objects for the SOL language.
 OBJECT_CLASS = SolClass(name="Object", superclass=None)
 INTEGER_CLASS = SolClass(name="Integer", superclass=OBJECT_CLASS)
 STRING_CLASS = SolClass(name="String", superclass=OBJECT_CLASS)
-BOOLEAN_CLASS = SolClass(name="Boolean", superclass=OBJECT_CLASS)
 NIL_CLASS = SolClass(name="Nil", superclass=OBJECT_CLASS)
 BLOCK_CLASS = SolClass(name="Block", superclass=OBJECT_CLASS)
-TRUE_CLASS = SolClass(name="True", superclass=BOOLEAN_CLASS)
-FALSE_CLASS = SolClass(name="False", superclass=BOOLEAN_CLASS)
+TRUE_CLASS = SolClass(name="True", superclass=OBJECT_CLASS)
+FALSE_CLASS = SolClass(name="False", superclass=OBJECT_CLASS)
 
 NIL = SolObject(sol_class=NIL_CLASS, value=None)
 TRUE = SolObject(sol_class=TRUE_CLASS, value=None)
 FALSE = SolObject(sol_class=FALSE_CLASS, value=None)
 
 
-def integer_plus(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.plus: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Integer.plus expects exactly one argument"
-        )
-    arg = args[0]  # Extract the single argument
-    # Check that both receiver and argument are of class Integer
-    if receiver.sol_class != INTEGER_CLASS or arg.sol_class != INTEGER_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.plus expects both receiver and argument to be of class Integer",
-        )
-    # Check that both receiver and argument have integer values
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.plus expects both receiver and argument to have integer values",
-        )
-    # Perform the addition and return a new Integer object with the result
-    result_value = receiver.value + arg.value
-    # Return a new SolObject representing the result of the addition
-    return SolObject(sol_class=INTEGER_CLASS, value=result_value)
+def _is_instance_of(obj: SolObject, target: SolClass) -> bool:
+    """Returns True if obj's class is target or a subclass of target."""
+    cls: SolClass | None = obj.sol_class
+    while cls is not None:
+        if cls is target:
+            return True
+        cls = cls.superclass
+    return False
 
 
-def integer_minus(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.minus: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
+def _check_arity(method_name: str, args: list[SolObject], expected: int) -> None:
+    """
+    Helper function to check that the number of arguments matches
+    the expected arity for a method.
+    """
+    if len(args) != expected:
         raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Integer.minus expects exactly one argument"
+            error_code=ErrorCode.INT_INVALID_ARG,  # Alebo ErrorCode.SEM_ARITY
+            message=f"{method_name} expects {expected} arguments, got {len(args)}",
         )
-    # Extract the single argument
-    arg = args[0]
-    # Check that both receiver and argument are of class Integer
-    if receiver.sol_class != INTEGER_CLASS or arg.sol_class != INTEGER_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.minus expects both receiver and argument to be of class Integer",
-        )
-    # Check that both receiver and argument have integer values
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.minus expects both receiver and argument to have integer values",
-        )
-    # Perform the subtraction and return a new Integer object with the result
-    result_value = receiver.value - arg.value
-    # Return a new SolObject representing the result of the subtraction
-    return SolObject(sol_class=INTEGER_CLASS, value=result_value)
 
 
-def integer_multiply(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.multiplyBy: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.multiplyBy expects exactly one argument",
-        )
-    # Extract the single argument
-    arg = args[0]
-    # Check that both receiver and argument are of class Integer
-    if receiver.sol_class != INTEGER_CLASS or arg.sol_class != INTEGER_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.multiplyBy expects both receiver and argument to be of class Integer",
-        )
-    # Check that both receiver and argument have integer values
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.multiplyBy expects both receiver and argument to have integer values",
-        )
-    # Perform the multiplication and return a new Integer object with the result
-    result_value = receiver.value * arg.value
-    # Return a new SolObject representing the result of the multiplication
-    return SolObject(sol_class=INTEGER_CLASS, value=result_value)
+class IntegerMethods:
+    """
+    Namespace for built-in SOL Integer methods.
+
+    Contains static implementations that handle the bridging between
+    SOL objects and Python's integer arithmetic. Each method follows
+    the (receiver, args) -> SolObject signature required for dispatch.
+    """
+
+    @staticmethod
+    def _validate(receiver: SolObject, args: list[SolObject]) -> tuple[int, int]:
+        """
+        Helper method to validate that the receiver and argument
+        are Integers and extract their values.
+        """
+        _check_arity("Integer", args, 1)
+        arg = args[0]
+        if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
+            raise InterpreterError(
+                error_code=ErrorCode.INT_INVALID_ARG,
+                message="Integer method expects both receiver and argument to be Integers",
+            )
+        return receiver.value, arg.value
+
+    @staticmethod
+    def _make_arithmetic(op: str) -> Callable[[SolObject, list[SolObject]], SolObject]:
+        """Factory method to create arithmetic methods for Integer."""
+
+        def method(receiver: SolObject, args: list[SolObject]) -> SolObject:
+            # Validate the receiver and argument, and extract their integer values.
+            a, b = IntegerMethods._validate(receiver, args)
+            match op:
+                case "+":
+                    result = a + b
+                case "-":
+                    result = a - b
+                case "*":
+                    result = a * b
+                case "/":
+                    if b == 0:
+                        raise InterpreterError(
+                            error_code=ErrorCode.INT_INVALID_ARG,
+                            message="Division by zero",
+                        )
+                    result = math.trunc(a / b)
+                case _:
+                    raise ValueError(f"Unknown arithmetic op: {op}")
+            return SolObject(sol_class=INTEGER_CLASS, value=result)
+
+        return method
+
+    # Define the arithmetic methods using the factory.
+    plus = _make_arithmetic("+")
+    minus = _make_arithmetic("-")
+    multiply = _make_arithmetic("*")
+    div = _make_arithmetic("/")
+
+    @staticmethod
+    def greater_than(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """
+        Returns true if the integer value of the receiver is greater
+        than the integer value of the argument, false otherwise.
+        """
+        a, b = IntegerMethods._validate(receiver, args)
+        return TRUE if a > b else FALSE
+
+    @staticmethod
+    def equal_to(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """
+        Returns true if the receiver and argument have the same integer value
+        false otherwise.
+        """
+        a, b = IntegerMethods._validate(receiver, args)
+        return TRUE if a == b else FALSE
+
+    @staticmethod
+    def as_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns a string representation of the integer value of the receiver."""
+        _check_arity("Integer.asString", args, 0)
+        # Create a new String object with the string representation of the integer value.
+        return SolObject(sol_class=STRING_CLASS, value=str(receiver.value))
+
+    @staticmethod
+    def as_integer(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the receiver itself as an Integer (since it is already an Integer)."""
+        return receiver  # returns self
+
+    @staticmethod
+    def times_repeat(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Handling in interpreter"""
+        return NIL  # overridden by interpreter._register_conditional_methods
 
 
-def integer_divide(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.divideBy: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Integer.divideBy expects exactly one argument"
-        )
-    # Extract the single argument
-    arg = args[0]
-    # Check that both receiver and argument are of class Integer
-    if receiver.sol_class != INTEGER_CLASS or arg.sol_class != INTEGER_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.divideBy expects both receiver and argument to be of class Integer",
-        )
-    # Check that both receiver and argument have integer values
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.divideBy expects both receiver and argument to have integer values",
-        )
-    # Check for division by zero
-    if arg.value == 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG,
-            message="Integer.divideBy expects argument to be non-zero",
-        )
-    # Perform the integer division and return a new Integer object with the result
-    result_value = receiver.value // arg.value
-    # Return a new SolObject representing the result of the division
-    return SolObject(sol_class=INTEGER_CLASS, value=result_value)
+class StringMethods:
+    """
+    Namespace for built-in SOL String methods.
+
+    Contains static implementations that handle the bridging between
+    SOL objects and Python's string operations. Each method follows
+    the (receiver, args) -> SolObject signature required for dispatch.
+    """
+
+    @staticmethod
+    def print(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Prints the string value of the receiver to standard output."""
+        _check_arity("String.print", args, 0)
+        # Print the string value without any additional formatting
+        print(receiver.value, end="")
+        return receiver
+
+    @staticmethod
+    def equal_to(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver and argument are equal (have the same value)"""
+        _check_arity("String.equalTo", args, 1)
+        return TRUE if receiver.value == args[0].value else FALSE
+
+    @staticmethod
+    def as_integer(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """
+        Returns the integer value of the string if it is a valid integer representation
+        or nil otherwise.
+        """
+        _check_arity("String.asInteger", args, 0)
+        if not isinstance(receiver.value, str):
+            raise InterpreterError(
+                error_code=ErrorCode.INT_OTHER,
+                message="String.asInteger: receiver must be a String",
+            )
+        try:
+            return SolObject(sol_class=INTEGER_CLASS, value=int(receiver.value))
+        except ValueError:
+            return NIL  # spec: returns nil if not a valid integer
+
+    @staticmethod
+    def as_string(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the receiver itself as a String (since it is already a String)."""
+        return receiver  # returns self
+
+    @staticmethod
+    def concatenate_with(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Concatenates the receiver with the argument and returns a new String object."""
+        _check_arity("String.concatenateWith", args, 1)
+        if not _is_instance_of(args[0], STRING_CLASS):
+            return NIL  # spec: non-String argument → nil
+        if not isinstance(receiver.value, str) or not isinstance(args[0].value, str):
+            return NIL
+        return SolObject(sol_class=STRING_CLASS, value=receiver.value + args[0].value)
+
+    @staticmethod
+    def length(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """
+        Returns the length of the string.
+        Raises an error if the receiver is not a String or if any arguments are provided.
+        """
+        _check_arity("String.length", args, 0)
+        if not isinstance(receiver.value, str):
+            raise InterpreterError(
+                error_code=ErrorCode.INT_OTHER,
+                message="String.length: receiver must be a String",
+            )
+        return SolObject(sol_class=INTEGER_CLASS, value=len(receiver.value))
+
+    @staticmethod
+    def starts_with_ends_before(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """
+        Returns the substring of the receiver (1-based).
+        Returns nil if the arguments are invalid.
+        """
+        _check_arity("String.startsWith:endsBefore", args, 2)
+        if not isinstance(receiver.value, str):
+            raise InterpreterError(
+                error_code=ErrorCode.INT_OTHER,
+                message="startsWith:endsBefore: receiver must be a String",
+            )
+        if not _is_instance_of(args[0], INTEGER_CLASS) or not _is_instance_of(
+            args[1], INTEGER_CLASS
+        ):
+            return NIL
+        if not isinstance(args[0].value, int) or not isinstance(args[1].value, int):
+            return NIL
+        # Store the start and end indices, and validate that they are positive.
+        start, end = args[0].value, args[1].value
+        if start <= 0 or end <= 0:
+            return NIL
+        # Convert from 1-based inclusive indices to 0-based exclusive indices for Python slicing.
+        return SolObject(sol_class=STRING_CLASS, value=receiver.value[start - 1 : end - 1])
 
 
-def equal_int(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.eqal: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Object.eqal: expects exactly one argument"
-        )
-    arg = args[0]  # Extract the single argument
-    # Check for reference equality (i.e., whether receiver and argument are the same object)
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Object.eqal: expects both receiver and argument to have integer values",
-        )
-    return TRUE if receiver.value == arg.value else FALSE
+class NilMethods:
+    """A class containing the methods for the Nil class."""
+
+    @staticmethod
+    def as_string(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the string "nil" for the Nil object."""
+        return SolObject(sol_class=STRING_CLASS, value="nil")
 
 
-def greater_than(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.greaterThan: method."""
-    # Check that there is exactly one argument
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.greaterThan: expects exactly one argument",
+class ObjectMethods:
+    """
+    Implementation of root methods for the SOL Object class.
+
+    These methods provide default behavior (identity, type checking,
+    string conversion) inherited by every other class in the SOL hierarchy.
+    """
+
+    @staticmethod
+    def equal_to(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver and argument are equal (have the same value)"""
+        _check_arity("Object.equalTo", args, 1)
+        return TRUE if receiver is args[0] else FALSE
+
+    @staticmethod
+    def identical_to(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver and argument are the same object, false otherwise."""
+        _check_arity("Object.identicalTo", args, 1)
+        return TRUE if receiver is args[0] else FALSE
+
+    @staticmethod
+    def is_nil(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is nil, false otherwise."""
+        _check_arity("Object.isNil", args, 0)
+        return TRUE if receiver is NIL else FALSE
+
+    @staticmethod
+    def as_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
+        """Returns a string representation of the receiver."""
+        _check_arity("Object.asString", args, 0)
+        return SolObject(sol_class=STRING_CLASS, value="")
+
+    @staticmethod
+    def is_boolean(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is either true or false, false otherwise."""
+        return (
+            TRUE
+            if (_is_instance_of(receiver, TRUE_CLASS) or _is_instance_of(receiver, FALSE_CLASS))
+            else FALSE
         )
-    arg = args[0]  # Extract the single argument
-    # Check that both receiver and argument are of class Integer
-    if receiver.sol_class != INTEGER_CLASS or arg.sol_class != INTEGER_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.greaterThan: expects to be of class Integer",
-        )
-    # Check that both receiver and argument have integer values
-    if not isinstance(receiver.value, int) or not isinstance(arg.value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Integer.greaterThan: expects to have integer values",
-        )
-    # Perform the comparison and return TRUE if receiver is greater than argument
-    if receiver.value > arg.value:
+
+    @staticmethod
+    def is_number(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is an Integer, false otherwise."""
+        return TRUE if _is_instance_of(receiver, INTEGER_CLASS) else FALSE
+
+    @staticmethod
+    def is_string(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is a string, false otherwise."""
+        return TRUE if _is_instance_of(receiver, STRING_CLASS) else FALSE
+
+    @staticmethod
+    def is_block(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is a block, false otherwise."""
+        return TRUE if _is_instance_of(receiver, BLOCK_CLASS) else FALSE
+
+    @staticmethod
+    def not_nil(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns true if the receiver is not nil, false if it is nil."""
+        return FALSE if receiver is NIL else TRUE
+
+    @staticmethod
+    def yourself(receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the receiver itself. (Useful for chaining messages to the same object.)"""
+        return receiver
+
+
+class TrueMethods:
+    """A class containing the methods for the True class."""
+
+    @staticmethod
+    def not_(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the boolean negation of True, which is False."""
+        return FALSE
+
+    @staticmethod
+    def as_string(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the string "true" for the True object."""
+        return SolObject(sol_class=STRING_CLASS, value="true")
+
+
+class FalseMethods:
+    """A class containing the methods for the False class."""
+
+    @staticmethod
+    def not_(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the boolean negation of False, which is True."""
         return TRUE
-    return FALSE
+
+    @staticmethod
+    def as_string(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
+        """Returns the string "false" for the False object."""
+        return SolObject(sol_class=STRING_CLASS, value="false")
 
 
-def as_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.asString method."""
-    # Check that there are no arguments
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Object.asString expects no arguments"
-        )
-    # Convert the receiver's value to a string and return a new String object with that value
-    result_value = str(receiver.value)
-    return SolObject(sol_class=STRING_CLASS, value=result_value)
+# Register Integer methods
+INTEGER_CLASS.methods["plus:"] = IntegerMethods.plus
+INTEGER_CLASS.methods["minus:"] = IntegerMethods.minus
+INTEGER_CLASS.methods["multiplyBy:"] = IntegerMethods.multiply
+INTEGER_CLASS.methods["divBy:"] = IntegerMethods.div
+INTEGER_CLASS.methods["greaterThan:"] = IntegerMethods.greater_than
+INTEGER_CLASS.methods["equalTo:"] = IntegerMethods.equal_to
+INTEGER_CLASS.methods["asString"] = IntegerMethods.as_string
+INTEGER_CLASS.methods["asInteger"] = IntegerMethods.as_integer
 
+# Register String methods
+STRING_CLASS.methods["print"] = StringMethods.print
+STRING_CLASS.methods["equalTo:"] = StringMethods.equal_to
+STRING_CLASS.methods["asInteger"] = StringMethods.as_integer
+STRING_CLASS.methods["asString"] = StringMethods.as_string
+STRING_CLASS.methods["concatenateWith:"] = StringMethods.concatenate_with
+STRING_CLASS.methods["length"] = StringMethods.length
+STRING_CLASS.methods["startsWith:endsBefore:"] = StringMethods.starts_with_ends_before
 
-def times_repeat(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Integer.timesRepeat: method."""
-    return NIL
+# Register Nil methods
+NIL_CLASS.methods["asString"] = NilMethods.as_string
 
+# Register Object methods (inherited by all classes)
+OBJECT_CLASS.methods["equalTo:"] = ObjectMethods.equal_to
+OBJECT_CLASS.methods["identicalTo:"] = ObjectMethods.identical_to
+OBJECT_CLASS.methods["isNil"] = ObjectMethods.is_nil
+OBJECT_CLASS.methods["asString"] = ObjectMethods.as_string
+OBJECT_CLASS.methods["isBoolean"] = ObjectMethods.is_boolean
+OBJECT_CLASS.methods["isNumber"] = ObjectMethods.is_number
+OBJECT_CLASS.methods["isString"] = ObjectMethods.is_string
+OBJECT_CLASS.methods["isBlock"] = ObjectMethods.is_block
+OBJECT_CLASS.methods["notNil"] = ObjectMethods.not_nil
+OBJECT_CLASS.methods["yourself"] = ObjectMethods.yourself
 
-def print_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the String.print method."""
-    # Check that there are no arguments
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="String.print expects no arguments"
-        )
-    # Print the receiver's value to the console without a newline
-    sys.stdout.write(str(receiver.value))
-    return receiver
+# Register True methods
+TRUE_CLASS.methods["not"] = TrueMethods.not_
+TRUE_CLASS.methods["asString"] = TrueMethods.as_string
 
-
-def equal_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the String.equalTo method"""
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG,
-            message="equalTo with strings expects one argument",
-        )
-    string = args[0]
-    if receiver.value == string.value:
-        return TRUE
-    return FALSE
-
-
-def convert_to_integer(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the String.asInteger method."""
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG, message="String.asInteger expects no arguments"
-        )
-    if not isinstance(receiver.value, str):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="String.asInteger expects the receiver to have a string value",
-        )
-    try:
-        int_value = int(receiver.value)
-        return SolObject(sol_class=INTEGER_CLASS, value=int_value)
-    except ValueError as e:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG,
-            message="String.asInteger expects the string to be a valid integer",
-        ) from e
-
-
-def read(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.read method."""
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG, message="Object.read expects no arguments"
-        )
-    try:
-        input_value = input()
-        return SolObject(sol_class=STRING_CLASS, value=input_value)
-    except EOFError as e:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Object.read encountered an unexpected EOF"
-        ) from e
-
-
-def string_size(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the String.size method."""
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG, message="String.size expects no arguments"
-        )
-    if receiver.sol_class != STRING_CLASS:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="String.size expects the receiver to be of class String",
-        )
-    if not isinstance(receiver.value, str):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="String.size expects the receiver to have a string value",
-        )
-    size_value = len(receiver.value)
-    return SolObject(sol_class=INTEGER_CLASS, value=size_value)
-
-
-def string_starts_with_ends_before(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    # type narrowing
-    if not isinstance(receiver.value, str):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="startsWith:endsBefore: receiver must be a String",
-        )
-    if not isinstance(args[0].value, int) or not isinstance(args[1].value, int):
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="startsWith:endsBefore: arguments must be Integers",
-        )
-    start = args[0].value
-    end = args[1].value
-    result = receiver.value[start - 1 : end - 1]
-    return SolObject(sol_class=STRING_CLASS, value=result)
-
-
-def true_not(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements True.not - returns FALSE."""
-    return FALSE
-
-
-def false_not(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements False.not - returns TRUE."""
-    return TRUE
-
-
-def true_if_true_if_false(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements True.ifTrue:ifFalse: - evaluates the first (true) block."""
-    # args[0] is the true block, args[1] is the false block
-    # Block evaluation will be filled in once Block methods are implemented
-    return NIL
-
-
-def false_if_true_if_false(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements False.ifTrue:ifFalse: - evaluates the second (false) block."""
-    # args[0] is the true block, args[1] is the false block
-    # Block evaluation will be filled in once Block methods are implemented
-    return NIL
-
-
-def true_and(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements True.and: - evaluates and returns the argument block."""
-    # TRUE and X = X, so evaluate the block
-    # Block evaluation will be filled in once Block methods are implemented
-    return NIL
-
-
-def false_and(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements False.and: - short-circuits, returns FALSE without evaluating."""
-    return FALSE
-
-
-def true_or(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements True.or: - short-circuits, returns TRUE without evaluating."""
-    return TRUE
-
-
-def false_or(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements False.or: - evaluates and returns the argument block."""
-    # FALSE or X = X, so evaluate the block
-    # Block evaluation will be filled in once Block methods are implemented
-    return NIL
-
-
-def while_true(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements Block.whileTrue: - will be implemented with Block support."""
-    return NIL
-
-
-def equal_object(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.equalTo: method for reference equality."""
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Object.equalTo: expects exactly one argument"
-        )
-    arg = args[0]
-    return TRUE if receiver is arg else FALSE
-
-
-def is_nil(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.isNil method."""
-    if len(args) != 0:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER, message="Object.isNil expects no arguments"
-        )
-    return TRUE if receiver is NIL else FALSE
-
-
-def identical_object(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.identicalTo: method for reference equality."""
-    if len(args) != 1:
-        raise InterpreterError(
-            error_code=ErrorCode.INT_OTHER,
-            message="Object.identicalTo: expects exactly one argument",
-        )
-    arg = args[0]
-    return TRUE if receiver is arg else FALSE
-
-
-def new_object(receiver: SolObject, args: list[SolObject]) -> SolObject:
-    """Implements the Object.new method."""
-    return NIL
-
-
-# Register the methods in the INTEGER_CLASS
-INTEGER_CLASS.methods["plus:"] = integer_plus
-INTEGER_CLASS.methods["minus:"] = integer_minus
-INTEGER_CLASS.methods["multiplyBy:"] = integer_multiply
-INTEGER_CLASS.methods["divBy:"] = integer_divide
-INTEGER_CLASS.methods["greaterThan:"] = greater_than
-INTEGER_CLASS.methods["equalTo:"] = equal_int
-INTEGER_CLASS.methods["asString"] = as_string
-INTEGER_CLASS.methods["timesRepeat:"] = times_repeat
-# Register the methods in the STRING_CLASS
-STRING_CLASS.methods["print"] = print_string
-STRING_CLASS.methods["equalTo:"] = equal_string
-STRING_CLASS.methods["asInteger"] = convert_to_integer
-STRING_CLASS.methods["size"] = string_size
-STRING_CLASS.methods["read"] = read
-STRING_CLASS.methods["startsWith:endsBefore:"] = string_starts_with_ends_before
-
-# Register the methods in TRUE_CLASS and FALSE_CLASS
-TRUE_CLASS.methods["not"] = true_not
-FALSE_CLASS.methods["not"] = false_not
-TRUE_CLASS.methods["ifTrue:ifFalse:"] = true_if_true_if_false
-FALSE_CLASS.methods["ifTrue:ifFalse:"] = false_if_true_if_false
-TRUE_CLASS.methods["and:"] = true_and
-FALSE_CLASS.methods["and:"] = false_and
-TRUE_CLASS.methods["or:"] = true_or
-FALSE_CLASS.methods["or:"] = false_or
-
-# Register the read method in the OBJECT_CLASS, so that it is available on all objects
-OBJECT_CLASS.methods["equalTo:"] = equal_object
-OBJECT_CLASS.methods["isNil"] = is_nil
-OBJECT_CLASS.methods["identicalTo:"] = identical_object
-OBJECT_CLASS.methods["asString"] = as_string
-OBJECT_CLASS.methods["new"] = new_object
+# Register False methods
+FALSE_CLASS.methods["not"] = FalseMethods.not_
+FALSE_CLASS.methods["asString"] = FalseMethods.as_string
