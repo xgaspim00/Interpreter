@@ -352,6 +352,7 @@ export function parseProgramXml(xmlSource: string): Program {
     parseAttributeValue: false,
     trimValues: false,
     ignoreDeclaration: true,
+    htmlEntities: true,
   });
 
   const parsed = xmlParser.parse(xmlSource) as unknown;

@@ -7,15 +7,15 @@ a různé ukázkové soubory.
 Aktuální stav:
 - Všechny šablony i překladač SOL2XML jsou zveřejněny a považovány za stabilní. 
   Přijímáme tipy k vylepšení a především reporty chyb (na fóru nebo na discordu).
-  Doporučujeme repozitář sledovat, ale na případné důležité změny budeme upozorňovat i pomocí
-  aktualit z předmětu.
-- Ještě budou doplněny README soubory (zejména k šablonám interpretu).
+  Doporučujeme repozitář sledovat, ale na případné důležité změny budeme upozorňovat i pomocí aktualit z předmětu.
 
 Postupně budou doplňovány také příklady programů v jazyce SOL26 i v jeho SOL-XML reprezentaci 
 a také ukázky Containerfile (Dockerfile) souborů, ze kterých můžete vycházet při kontejnerizaci.
 
 Věnujte pozornost README souborům v jednotlivých adresářích, obsahují podrobné pokyny platné
 pro jednotlivé jazyky.
+
+V adresáři `examples/` najdete několik příkladů v jazyce SOL26 (pozor, ne všechny jsou nutně „spustitelné“ – může jít spíše o okomentované fragmenty kódu vysvětlující konkrétní situaci) a také popis způsobu, jakým budou spouštěny vaše kontejnery (adresář `examples/docker/`).
 
 ## Podstatné změny
 
@@ -25,6 +25,7 @@ Níže jsou uvedeny (v sestupném pořadí dle data) „zásadnější“ změny
 
 | Datum    | Commit    | Popis
 | -------- | --------- | -----
+| 26-04-09 | `8e1fc87` | V TS šabloně interpretu opravena absence deserializace potřebných XML entit v řetězcích.
 | 26-03-27 | `be87d45` | V Py šabloně testovacího nástroje povoleno ignorovat chybová hlášení související se spouštěním procesů.
 | 26-03-27 | `1dc41a1` | V PHP šabloně testovacího nástroje odstraněna pravidla zamezující spouštění nových procesů.
 | 26-03-08 | `64b94c1` | V Py šabloně interpretu opravena nesprávná deserializace XML (ve specifických a námi netestovaných případech).
