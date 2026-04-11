@@ -50,7 +50,7 @@ def _check_arity(method_name: str, args: list[SolObject], expected: int) -> None
     """
     if len(args) != expected:
         raise InterpreterError(
-            error_code=ErrorCode.INT_INVALID_ARG,  # Alebo ErrorCode.SEM_ARITY
+            error_code=ErrorCode.INT_INVALID_ARG,
             message=f"{method_name} expects {expected} arguments, got {len(args)}",
         )
 
