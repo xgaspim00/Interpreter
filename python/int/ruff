@@ -1,0 +1,7 @@
+#!/bin/bash
+# Wrapper for ruff – activates venv if available, falls back to global install (Docker)
+if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then
+    exec "$VIRTUAL_ENV/bin/ruff" "$@"
+else
+    exec ruff "$@"
+fi

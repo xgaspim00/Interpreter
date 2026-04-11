@@ -1,0 +1,8 @@
+#!/bin/bash
+# Wrapper for prettier – uses local node_modules if available, falls back to global (Docker)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/node_modules/.bin/prettier" ]; then
+    exec "$SCRIPT_DIR/node_modules/.bin/prettier" "$@"
+else
+    exec prettier "$@"
+fi

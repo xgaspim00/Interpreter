@@ -1,0 +1,7 @@
+#!/bin/bash
+# Wrapper for mypy – activates venv if available, falls back to global install (Docker)
+if [ -n "$VIRTUAL_ENV" ] && [ -x "$VIRTUAL_ENV/bin/mypy" ]; then
+    exec "$VIRTUAL_ENV/bin/mypy" "$@"
+else
+    exec mypy "$@"
+fi

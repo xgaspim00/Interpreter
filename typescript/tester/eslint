@@ -1,0 +1,8 @@
+#!/bin/bash
+# Wrapper for eslint – uses local node_modules if available, falls back to global (Docker)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/node_modules/.bin/eslint" ]; then
+    exec "$SCRIPT_DIR/node_modules/.bin/eslint" "$@"
+else
+    exec eslint "$@"
+fi
