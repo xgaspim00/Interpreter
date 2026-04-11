@@ -19,14 +19,18 @@ from interpreter.exceptions import InterpreterError
 
 class SolObject:
     """
-    A class representing an object in the SOL language.
+    Represents a runtime object in the SOL language.
+
+    Every value in SOL is a SolObject. The `sol_class` field points to its class.
+    The `value` field holds a primitive for built-in types (int for Integer, str for String,
+    SolClass for class objects, BlockValue for blocks) and is None for regular instances.
+    The `attributes` dict holds dynamically assigned instance attributes.
     """
 
     sol_class: SolClass
     attributes: dict[str, SolObject]
     value: int | str | SolClass | BlockValue | None
 
-    # Initialize a SOL object with its class, an optional value, and an empty attribute dictionary.
     def __init__(
         self, sol_class: SolClass, value: int | str | SolClass | BlockValue | None = None
     ) -> None:
@@ -37,21 +41,26 @@ class SolObject:
 
 class SolClass:
     """
-    A class representing a class in the SOL language.
+    Represents a class in the SOL language.
+
+    Holds the class name, a reference to its superclass (None only for Object),
+    and a dictionary of methods keyed by their selector strings.
     """
 
     name: str
     superclass: SolClass | None
     methods: dict[str, Callable[..., SolObject]]
 
-    # Initialize a SOL class with its name, optional superclass, and an empty method dictionary.
     def __init__(self, name: str, superclass: SolClass | None) -> None:
         self.name = name
         self.superclass = superclass
         self.methods = {}
 
     def lookup_method(self, selector: str) -> Callable[..., SolObject] | None:
-        """Looks up a method by selector in this class and its superclasses."""
+        """Looks up a method by selector in this class and its superclasses.
+
+        Returns None if the method is not found anywhere in the inheritance chain.
+        """
         if selector in self.methods:
             return self.methods[selector]
         if self.superclass is not None:
@@ -61,14 +70,16 @@ class SolClass:
 
 class Environment:
     """
-    A class representing an environment in the SOL language.
+    Represents a lexical scope as a linked list of variable dictionaries.
+
+    Each scope holds its own variables and a pointer to the enclosing (parent) scope.
+    Variable lookup and assignment walk the chain upward, enabling closures to correctly
+    read and mutate variables from outer scopes without accidentally shadowing them.
     """
 
     variables: dict[str, SolObject]
     parent: Environment | None
 
-    # Initialize an environment with an optional parent environment
-    # and an empty variable dictionary.
     def __init__(self, parent: Environment | None = None) -> None:
         self.variables = {}
         self.parent = parent
@@ -84,9 +95,7 @@ class Environment:
         return False
 
     def get(self, name: str) -> SolObject:
-        """
-        Gets the value of a variable by name from the current scope or any parent scope.
-        """
+        """Resolves and returns the variables value"""
         if name in self.variables:
             return self.variables[name]
         if self.parent is not None:
@@ -115,7 +124,7 @@ class BlockValue:
     Represents a block closure — the AST node together with its captured execution context.
     """
 
-    block_model: object
+    block_model: object  # Typed as object to avoid circular imports with the AST module
     closure: Environment
     self_obj: SolObject
     defining_class: SolClass

@@ -1,15 +1,11 @@
 """
-This module contains the built-in classes and static functions for the SOL language.
+This module defines the builtin classes and methods
 
 Author: Marek Gašpierik (xgaspim00)
 
-ARCHITECTURAL NOTE:
 This file implements only static methods that are independent of the program's
-runtime state (e.g., arithmetic, string manipulation, identity checks).
-Dynamic methods that control the program flow, evaluate AST nodes, or manage
-environments (such as `whileTrue:`, `ifTrue:`, `timesRepeat:`, `new`, and `from:`)
-are implemented and injected dynamically by the Interpreter class in `interpreter.py`.
-This design prevents circular imports and grants these methods access to the execution context.
+runtime state. Dynamic methods are implemented and injected dynamically by the
+Interpreter class in `interpreter.py`.
 """
 
 import math
@@ -58,10 +54,6 @@ def _check_arity(method_name: str, args: list[SolObject], expected: int) -> None
 class IntegerMethods:
     """
     Namespace for built-in SOL Integer methods.
-
-    Contains static implementations that handle the bridging between
-    SOL objects and Python's integer arithmetic. Each method follows
-    the (receiver, args) -> SolObject signature required for dispatch.
     """
 
     @staticmethod
@@ -84,7 +76,6 @@ class IntegerMethods:
         """Factory method to create arithmetic methods for Integer."""
 
         def method(receiver: SolObject, args: list[SolObject]) -> SolObject:
-            # Validate the receiver and argument, and extract their integer values.
             a, b = IntegerMethods._validate(receiver, args)
             match op:
                 case "+":
@@ -134,34 +125,33 @@ class IntegerMethods:
     def as_string(receiver: SolObject, args: list[SolObject]) -> SolObject:
         """Returns a string representation of the integer value of the receiver."""
         _check_arity("Integer.asString", args, 0)
-        # Create a new String object with the string representation of the integer value.
         return SolObject(sol_class=STRING_CLASS, value=str(receiver.value))
 
     @staticmethod
     def as_integer(receiver: SolObject, _args: list[SolObject]) -> SolObject:
-        """Returns the receiver itself as an Integer (since it is already an Integer)."""
-        return receiver  # returns self
+        """Returns the receiver itself."""
+        return receiver
 
     @staticmethod
     def times_repeat(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
-        """Handling in interpreter"""
-        return NIL  # overridden by interpreter._register_conditional_methods
+        """Placeholder overridden by the Interpreter at runtime.
+
+        The actual implementation requires access to the runtime execution context
+        to invoke a block repeatedly, so it is injected by
+        Interpreter._register_conditional_methods.
+        """
+        return NIL
 
 
 class StringMethods:
     """
     Namespace for built-in SOL String methods.
-
-    Contains static implementations that handle the bridging between
-    SOL objects and Python's string operations. Each method follows
-    the (receiver, args) -> SolObject signature required for dispatch.
     """
 
     @staticmethod
     def print(receiver: SolObject, args: list[SolObject]) -> SolObject:
         """Prints the string value of the receiver to standard output."""
         _check_arity("String.print", args, 0)
-        # Print the string value without any additional formatting
         print(receiver.value, end="")
         return receiver
 
@@ -190,8 +180,8 @@ class StringMethods:
 
     @staticmethod
     def as_string(receiver: SolObject, _args: list[SolObject]) -> SolObject:
-        """Returns the receiver itself as a String (since it is already a String)."""
-        return receiver  # returns self
+        """Returns the receiver itself."""
+        return receiver
 
     @staticmethod
     def concatenate_with(receiver: SolObject, args: list[SolObject]) -> SolObject:
@@ -220,8 +210,10 @@ class StringMethods:
     @staticmethod
     def starts_with_ends_before(receiver: SolObject, args: list[SolObject]) -> SolObject:
         """
-        Returns the substring of the receiver (1-based).
-        Returns nil if the arguments are invalid.
+        Returns a substring of the receiver using 1-based indices.
+
+        args[0] is the start index (inclusive), args[1] is the end index (exclusive).
+        Returns nil if either argument is not a positive Integer.
         """
         _check_arity("String.startsWith:endsBefore", args, 2)
         if not isinstance(receiver.value, str):
@@ -235,7 +227,6 @@ class StringMethods:
             return NIL
         if not isinstance(args[0].value, int) or not isinstance(args[1].value, int):
             return NIL
-        # Store the start and end indices, and validate that they are positive.
         start, end = args[0].value, args[1].value
         if start <= 0 or end <= 0:
             return NIL
@@ -244,7 +235,7 @@ class StringMethods:
 
 
 class NilMethods:
-    """A class containing the methods for the Nil class."""
+    """Static namespace for built-in SOL Nil methods."""
 
     @staticmethod
     def as_string(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
@@ -254,10 +245,7 @@ class NilMethods:
 
 class ObjectMethods:
     """
-    Implementation of root methods for the SOL Object class.
-
-    These methods provide default behavior (identity, type checking,
-    string conversion) inherited by every other class in the SOL hierarchy.
+    Implementation of methods for the SOL Object class.
     """
 
     @staticmethod
@@ -320,7 +308,7 @@ class ObjectMethods:
 
 
 class TrueMethods:
-    """A class containing the methods for the True class."""
+    """Static namespace for built-in SOL True singleton methods."""
 
     @staticmethod
     def not_(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
@@ -334,7 +322,7 @@ class TrueMethods:
 
 
 class FalseMethods:
-    """A class containing the methods for the False class."""
+    """Static namespace for built-in SOL False singleton methods."""
 
     @staticmethod
     def not_(_receiver: SolObject, _args: list[SolObject]) -> SolObject:
@@ -347,7 +335,6 @@ class FalseMethods:
         return SolObject(sol_class=STRING_CLASS, value="false")
 
 
-# Register Integer methods
 INTEGER_CLASS.methods["plus:"] = IntegerMethods.plus
 INTEGER_CLASS.methods["minus:"] = IntegerMethods.minus
 INTEGER_CLASS.methods["multiplyBy:"] = IntegerMethods.multiply
@@ -357,7 +344,6 @@ INTEGER_CLASS.methods["equalTo:"] = IntegerMethods.equal_to
 INTEGER_CLASS.methods["asString"] = IntegerMethods.as_string
 INTEGER_CLASS.methods["asInteger"] = IntegerMethods.as_integer
 
-# Register String methods
 STRING_CLASS.methods["print"] = StringMethods.print
 STRING_CLASS.methods["equalTo:"] = StringMethods.equal_to
 STRING_CLASS.methods["asInteger"] = StringMethods.as_integer
@@ -366,10 +352,8 @@ STRING_CLASS.methods["concatenateWith:"] = StringMethods.concatenate_with
 STRING_CLASS.methods["length"] = StringMethods.length
 STRING_CLASS.methods["startsWith:endsBefore:"] = StringMethods.starts_with_ends_before
 
-# Register Nil methods
 NIL_CLASS.methods["asString"] = NilMethods.as_string
 
-# Register Object methods (inherited by all classes)
 OBJECT_CLASS.methods["equalTo:"] = ObjectMethods.equal_to
 OBJECT_CLASS.methods["identicalTo:"] = ObjectMethods.identical_to
 OBJECT_CLASS.methods["isNil"] = ObjectMethods.is_nil
@@ -381,10 +365,8 @@ OBJECT_CLASS.methods["isBlock"] = ObjectMethods.is_block
 OBJECT_CLASS.methods["notNil"] = ObjectMethods.not_nil
 OBJECT_CLASS.methods["yourself"] = ObjectMethods.yourself
 
-# Register True methods
 TRUE_CLASS.methods["not"] = TrueMethods.not_
 TRUE_CLASS.methods["asString"] = TrueMethods.as_string
 
-# Register False methods
 FALSE_CLASS.methods["not"] = FalseMethods.not_
 FALSE_CLASS.methods["asString"] = FalseMethods.as_string
