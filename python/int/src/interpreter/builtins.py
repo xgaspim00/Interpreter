@@ -250,7 +250,7 @@ class ObjectMethods:
 
     @staticmethod
     def equal_to(receiver: SolObject, args: list[SolObject]) -> SolObject:
-        """Returns true if the receiver and argument are equal (have the same value)"""
+        """Returns true if the receiver and argument are the same object (identity comparison)."""
         _check_arity("Object.equalTo", args, 1)
         return TRUE if receiver is args[0] else FALSE
 
