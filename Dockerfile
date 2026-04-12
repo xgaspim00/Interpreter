@@ -60,18 +60,22 @@ RUN npx tsc
 FROM python:3.14-rc-slim AS runtime
 
 WORKDIR /app
-# Copy requirements for the interpreter and sol2xml
+# Copy requirements for the interpreter
 COPY python/int/requirements.txt .
-COPY sol2xml/requirements.txt /sol2xml/requirements.txt
 # Install system dependencies required to compile lxml (gcc, XML/XSLT and zlib headers)
-RUN apt-get update && apt-get install -y gcc libxml2-dev libxslt1-dev zlib1g-dev && \
+# and git for cloning sol2xml from the templates repository
+RUN apt-get update && apt-get install -y gcc libxml2-dev libxslt1-dev zlib1g-dev git && \
     rm -rf /var/lib/apt/lists/*
+# Clone sol2xml from the templates repository at a pinned commit for reproducibility
+RUN git clone https://github.com/iondryas/ipp26-project-templates.git /tmp/templates && \
+    git -C /tmp/templates checkout 1d9245f82a7504e64999c04003f6edf1c5556681 && \
+    cp -r /tmp/templates/sol2xml /sol2xml && \
+    rm -rf /tmp/templates
 # Install requirements for the interpreter and sol2xml
 RUN pip install --no-cache-dir -r requirements.txt -r /sol2xml/requirements.txt
 
-# Copy the interpreter source codes and the sol2xml compiler into the image
+# Copy the interpreter source codes into the image
 COPY python/int/src/ src/
-COPY sol2xml/ /sol2xml/
 
 # The image directly runs the interpreter
 ENTRYPOINT ["python", "src/solint.py"]
