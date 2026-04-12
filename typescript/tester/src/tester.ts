@@ -12,6 +12,11 @@
  *
  * AI usage notice: The author used OpenAI Codex to create the implementation of this
  *                  module based on its Python counterpart.
+ *
+ * Author of the recent edits: Marek Gašpierik (xgaspim00)
+ *
+ * I needed to apply some changes to the template, every change is marked with a comment
+ * containing my name and the reason for the change.
  */
 
 import { existsSync, lstatSync, writeFileSync } from "node:fs";
@@ -19,6 +24,9 @@ import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { TestReport } from "./models.js";
+// xgaspim00: Import the necessary classes and functions from the other modules
+import { generateHtmlReport, TestReportJSON } from "./html_generator.js";
+import { Tester } from "./runner.js";
 
 import { pino } from "pino";
 
@@ -32,7 +40,11 @@ const logger = pino({
   },
 });
 
-interface CliArguments {
+/**
+ * xgaspim00:
+ * Added export to the interface declaration to make it available for import in other modules.
+ */
+export interface CliArguments {
   tests_dir: string;
   recursive: boolean;
   output: string | null;
@@ -45,15 +57,33 @@ interface CliArguments {
   exclude_test: string[] | null;
   verbose: number;
   regex_filters: boolean;
+  html: boolean;
 }
 
-function writeResult(resultReport: TestReport, outputFile: string | null): void {
+// xgaspim00: added generateHtml parameter to control HTML report generation
+function writeResult(
+  resultReport: TestReport,
+  outputFile: string | null,
+  generateHtml: boolean
+): void {
   /**
    * Writes the final report to the specified output file or standard output if no file is provided.
    */
-  const resultJson = JSON.stringify(resultReport, null, 2);
+  const resultJsonObj = resultReport.toJSON();
+  const resultJson = JSON.stringify(resultJsonObj, null, 2);
+
   if (outputFile !== null) {
     writeFileSync(outputFile, resultJson, "utf8");
+    // xgaspim00: Generate the HTML report if requested
+    if (generateHtml) {
+      const htmlOutputFile = outputFile.replace(/\.json$/, "") + ".html";
+      try {
+        const htmlOutput = generateHtmlReport(resultJsonObj as unknown as TestReportJSON);
+        writeFileSync(htmlOutputFile, htmlOutput, "utf8");
+      } catch (err) {
+        console.error("Failed to generate HTML report:", err);
+      }
+    }
     return;
   }
 
@@ -67,6 +97,7 @@ const DOUBLE_LETTER_SHORT_OPTION_NORMALIZATION = new Map<string, string>([
   ["-et", "--exclude-test"],
 ]);
 
+// xgaspim00: Added a --html to the help message
 const HELP_TEXT = [
   "Usage:",
   "  tester [options] tests_dir",
@@ -76,6 +107,7 @@ const HELP_TEXT = [
   "",
   "Options:",
   "  -h, --help                Show this help message and exit.",
+  "  --html                    Generate an HTML report.",
   "  -r, --recursive           Recursively search for test cases in subdirectories of the provided directory.",
   "  -o, --output <path>       The output file to write the test results to. If not provided, results will be printed to standard output.",
   "  --dry-run                 Perform a dry run: discover the test cases but don't actually execute them.",
@@ -95,6 +127,8 @@ const HELP_TEXT = [
 
 const PARSE_OPTIONS = {
   help: { type: "boolean", short: "h", default: false },
+  // xgaspim00: Add html option to the CLI arguments
+  html: { type: "boolean", default: false },
   recursive: { type: "boolean", short: "r", default: false },
   output: { type: "string", short: "o" },
   "dry-run": { type: "boolean", default: false },
@@ -121,7 +155,7 @@ function listOrNull(values: string[] | undefined): string[] | null {
     return null;
   }
 
-  return values;
+  return values.map((v) => v.trim());
 }
 
 function parseCliArgumentsRaw(argv: string[]) {
@@ -162,6 +196,8 @@ function parseArguments(): CliArguments {
   const args: CliArguments = {
     tests_dir: resolve(parsed.positionals[0]),
     recursive: parsedValues["recursive"],
+    // xgaspim00: Add html flag
+    html: parsedValues["html"],
     output: parsedValues["output"] ?? null,
     dry_run: parsedValues["dry-run"],
     include: listOrNull(parsedValues["include"]),
@@ -217,11 +253,17 @@ function main(): void {
     logger.level = "info";
   }
 
-  // TODO: Your code for discovering and executing the test cases goes here.
-
-  // Example of how to write the final report:
-  const report = new TestReport({ discovered_test_cases: [], unexecuted: {}, results: {} });
-  writeResult(report, args.output);
+  // Create a Tester instance
+  const tester = new Tester(args);
+  // Discover the test cases
+  tester.discover();
+  // Filter the tests
+  tester.filter_tests();
+  // Run the tests and generate the report
+  const report = tester.run(args.dry_run);
+  writeResult(report, args.output, args.html);
 }
 
 main();
+
+// End of tester.ts
